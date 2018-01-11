@@ -192,14 +192,14 @@ namespace Genetic
                 }
                 populationLen = individuals.Count;
                 nexIndividuals.Clear();
-                Parallel.For(0, population/2, x =>
+                Parallel.For(0, population >> 1, x =>
                 {
                     Int32 ia;
                     Int32 ib;
                     lock (randLock)
                     {
-                        ia = rand.Next(0, populationLen / 2);
-                        ib = rand.Next(0, populationLen / 2);
+                        ia = rand.Next(0, populationLen >> 1);
+                        ib = rand.Next(0, populationLen >> 1);
                     }
                     if (ia == ib) ib = (ib + 1) % populationLen;
                     var tmp = Dna.Cross(individuals[ia], individuals[ib]);
