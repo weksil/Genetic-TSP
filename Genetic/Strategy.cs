@@ -7,16 +7,13 @@ namespace Genetic
 {
     public struct Edge
     {
-        public Int32 Id;
-        public Int32 NodeBId;
-        public Int32 NodeAId;
-        public Int32 Length;
+        public Int32 Id, NodeBId, NodeAId, Length;
         public Int32 GetAnother(int id) => NodeAId == id ? NodeBId : NodeAId;
         public bool HaveNode(int id) => NodeBId == id || NodeAId == id;
         public bool HaveNodes(int idA, int idB) => NodeAId == idA && NodeBId == idB || NodeBId == idA && NodeAId == idB;
         public override string ToString() => NodeAId + "-" + NodeBId;
     }
-    public class Node
+    public struct Node
     {
         public Int32 Id;
         public Int32[] EdgesId;
@@ -29,7 +26,7 @@ namespace Genetic
         {
             Dna res = new Dna();
             Int32 pathLen;
-            lock (randLock) pathLen = rand.Next(nodes.Length - 1, nodes.Length + nodes.Length/2);
+            lock (randLock) pathLen = rand.Next(nodes.Length - 1, nodes.Length + (nodes.Length >> 1));
             Int32 nodeIndex = start;
             Int32 lastNode;
             res.Genom = new List<Int32>(pathLen);
@@ -52,7 +49,7 @@ namespace Genetic
                 lock (randLock) mutate = rand.Next(0, 100) < ver;
                 if (!mutate) continue;
 
-                lock (randLock) index = nodes[Genom[i]].NodesId[rand.Next(0, nodes[Genom[i]].NodesId.Length)] ;
+                lock (randLock) index = nodes[Genom[i]].NodesId[rand.Next(0, nodes[Genom[i]].NodesId.Length)];
                 Genom[i] = nodes[index].Id;
             }
             lock (randLock)
@@ -65,7 +62,7 @@ namespace Genetic
                 if (mutate)
                 {
                     index = Genom.Count - 1;
-                    lock (randLock) index = nodes[ Genom[index] ].NodesId[ rand.Next(0, nodes[ Genom[index] ].NodesId.Length) ];
+                    lock (randLock) index = nodes[Genom[index]].NodesId[rand.Next(0, nodes[Genom[index]].NodesId.Length)];
                     Genom.Add(nodes[index].Id);
                 }
                 else
@@ -98,7 +95,7 @@ namespace Genetic
                         res.Genom.Add((i << 1 & 1) == 0 ? a.Genom[i] : b.Genom[i]);
                     else
                         res.Genom.Add(a.Genom[i]);
-            }   
+            }
             return res;
         }
         public Int32 Length(Edge[] edges)
@@ -111,7 +108,7 @@ namespace Genetic
             {
                 idA = Genom[i];
                 idB = Genom[i + 1];
-                res += edges.Where(x => x.HaveNodes(idA,idB) ).First().Length;
+                res += edges.Where(x => x.HaveNodes(idA, idB)).FirstOrDefault().Length;
             }
             return res;
         }
@@ -142,8 +139,7 @@ namespace Genetic
     }
     public class EvolutionEngine
     {
-        static Object randLock;
-        static Object individualsLock;
+        static Object randLock, individualsLock;
         static Random rand;
         public List<Edge> edges;
         public List<Node> nodes;
@@ -191,11 +187,10 @@ namespace Genetic
                     });
                 }
                 populationLen = individuals.Count;
-                nexIndividuals.Clear();
+                nexIndividuals = new List<Dna>(individuals.Take(populationLen >> 1));
                 Parallel.For(0, population >> 1, x =>
                 {
-                    Int32 ia;
-                    Int32 ib;
+                    Int32 ia, ib;
                     lock (randLock)
                     {
                         ia = rand.Next(0, populationLen >> 1);
@@ -204,25 +199,18 @@ namespace Genetic
                     if (ia == ib) ib = (ib + 1) % populationLen;
                     var tmp = Dna.Cross(individuals[ia], individuals[ib]);
                     lock (individualsLock) nexIndividuals.Add(tmp);
-
                     tmp = Dna.Cross(individuals[ib], individuals[ia]);
                     lock (individualsLock) nexIndividuals.Add(tmp);
-
                     tmp = Dna.New(srcNode, startNode, rand, randLock);
                     lock (individualsLock) nexIndividuals.Add(tmp);
-
                     tmp = Dna.New(srcNode, startNode, rand, randLock);
                     lock (individualsLock) nexIndividuals.Add(tmp);
-
                 });
                 individuals = new List<Dna>(nexIndividuals);
-                Parallel.For(0, individuals.Count, x => individuals[x].Mutate(ver, rand, randLock, srcNode) );
+                Parallel.For(0, individuals.Count, x => individuals[x].Mutate(ver, rand, randLock, srcNode));
             }
             individuals = individuals.AsParallel().Where(x => x.Validate(srcEdge, srcNode)).OrderBy(x => x.Length(srcEdge)).ToList();
-            if (individuals.Count == 0)
-            {
-                return false;
-            }
+            if (individuals.Count == 0) return false;
             return true;
         }
         public Dna Best() => individuals.FirstOrDefault();
@@ -232,7 +220,20 @@ namespace Genetic
         {
             nodes.Clear();
             for (int i = 0; i < count; i++)
-                nodes.Add(new Node() { Id = i});
+                nodes.Add(new Node() { Id = i });
+        }
+        public void Init()
+        {
+            for (int i = 0; i < nodes.Count; i++)
+            {
+                var item = nodes[i];
+                item.EdgesId = edges.Where(x => x.HaveNode(item.Id)).Select(x => x.Id).ToArray();
+                List<Int32> ids = new List<Int32>(item.EdgesId.Length);
+                foreach (var item2 in item.EdgesId)
+                    ids.Add(edges[item2].GetAnother(item.Id));
+                item.NodesId = ids.ToArray();
+                nodes[i] = item;
+            }
         }
     }
 }
